@@ -1,7 +1,7 @@
 {
   "name": "neta-stock",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "expo-router/entry",
   "dependencies": {
     "expo": "~57.0.9",
     "expo-constants": "~57.0.8",
@@ -16,6 +16,9 @@
   "devDependencies": {
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
+  },
+  "overrides": {
+    "react-dom": "19.2.3"
   },
   "scripts": {
     "start": "expo start",
