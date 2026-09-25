@@ -1,73 +1,73 @@
-import { User } from '../types/user';
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  sendPasswordResetEmail as firebaseSendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+} from 'firebase/auth';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 import { getCurrentUser, setCurrentUser, subscribe } from './authStore';
 
 export const subscribeToAuth = subscribe;
 export { getCurrentUser };
 
-export type AuthErrorCode = 'auth/email-already-in-use' | 'auth/user-not-found' | 'auth/wrong-password';
-
 export class AuthError extends Error {
-  code: AuthErrorCode;
+  code: string;
 
-  constructor(code: AuthErrorCode) {
+  constructor(code: string) {
     super(code);
     this.code = code;
   }
 }
 
-interface StoredAccount {
-  password: string;
-  uid: string;
-  displayName: string;
-  createdAt: Date;
+function toAuthError(error: unknown): AuthError {
+  const code = typeof error === 'object' && error && 'code' in error ? String((error as { code: unknown }).code) : 'unknown';
+  return new AuthError(code);
 }
 
-const accounts = new Map<string, StoredAccount>();
-
-function generateUid(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function toUser(email: string, account: StoredAccount): User {
-  return {
-    uid: account.uid,
-    displayName: account.displayName,
-    email,
-    createdAt: account.createdAt,
-  };
-}
+onAuthStateChanged(auth, (firebaseUser) => {
+  if (!firebaseUser) {
+    setCurrentUser(null);
+    return;
+  }
+  setCurrentUser({
+    uid: firebaseUser.uid,
+    displayName: firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? '',
+    email: firebaseUser.email ?? '',
+    createdAt: firebaseUser.metadata.creationTime ? new Date(firebaseUser.metadata.creationTime) : new Date(),
+  });
+});
 
 export async function signUp(email: string, password: string): Promise<void> {
-  if (accounts.has(email)) {
-    throw new AuthError('auth/email-already-in-use');
+  try {
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    await setDoc(doc(db, 'users', credential.user.uid), {
+      displayName: email.split('@')[0],
+      email,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    throw toAuthError(error);
   }
-  const account: StoredAccount = {
-    password,
-    uid: generateUid(),
-    displayName: email.split('@')[0],
-    createdAt: new Date(),
-  };
-  accounts.set(email, account);
-  setCurrentUser(toUser(email, account));
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
-  const account = accounts.get(email);
-  if (!account) {
-    throw new AuthError('auth/user-not-found');
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (error) {
+    throw toAuthError(error);
   }
-  if (account.password !== password) {
-    throw new AuthError('auth/wrong-password');
-  }
-  setCurrentUser(toUser(email, account));
 }
 
 export async function signOut(): Promise<void> {
-  setCurrentUser(null);
+  await firebaseSignOut(auth);
 }
 
 export async function sendPasswordResetEmail(email: string): Promise<void> {
-  if (!accounts.has(email)) {
-    throw new AuthError('auth/user-not-found');
+  try {
+    await firebaseSendPasswordResetEmail(auth, email);
+  } catch (error) {
+    throw toAuthError(error);
   }
 }
